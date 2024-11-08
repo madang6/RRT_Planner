@@ -20,9 +20,8 @@ class Node:
 
 # Define the RRT class
 class RRT:
-    def __init__(self, env_arr, env_pts, start, bounds, altitude, algorithm='RRT', dimension=2, step_size=1.0, max_iter=10000,
+    def __init__(self, env_arr, start, bounds, altitude, algorithm='RRT', dimension=2, step_size=1.0, max_iter=10000,
                   collision_check_resolution=0.1, exact_step=False, bounded_step = False, prevent_edge_overlap=False):
-        self.env_pts = env_pts
         self.env_arr = env_arr
         self.algorithm = algorithm
         self.dimension = dimension
@@ -42,7 +41,7 @@ class RRT:
 
         self.altitude = altitude
         self.exclusion_radius = 0.45  # Determines how close the camera can get to any point in the environment
-        self.min_edge_separation = 0.1  # Adjust this value as needed
+        self.min_edge_separation = 0.1  # Adjust this value as needed - dictates how close edges can be to eachother
 
     def is_collision(self, point):
         # Collision checking against pointcloud
@@ -54,11 +53,6 @@ class RRT:
                 return False
             else:
                 return True
-            # pose_xyz = np.array([pose[:3, -1] for pose in poses])
-            # for pose, xyz in zip(poses, pose_xyz):
-            #     distances = np.linalg.norm(self.env_pts - xyz[:,np.newaxis], axis=0)
-            #     if not np.any(distances <= exclusion_radius):
-            #         render_target_poses.append(pose)
         else:
             return False
     
@@ -383,11 +377,6 @@ class RRT:
 
     def _visualize_2d(self, show_sampled_points=False):
         fig, ax = plt.subplots()
-
-        # # Plot the obstacles
-        # for obs in self.obstacles:
-        #     obs.plot(ax)
-
         # Plot edges next
         for edge in self.edges:
             xs = [edge[0][0], edge[1][0]]
@@ -416,14 +405,13 @@ class RRT:
                     color=colors, s=2, marker='.', zorder=4, label='Sampled Points')
 
         # Plot the start node
-        ax.scatter(self.goal_node.position[0], self.goal_node.position[1], color='red', s=50, zorder=5, label='Final Location')
+        ax.scatter(self.goal_node.position[0], self.goal_node.position[1], color='red', s=50, zorder=5, label='Current Location')
 
         ax.set_xlim(self.bounds[0])
         ax.set_ylim(self.bounds[1])
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         plt.legend()
-        # plt.show()
 
     def _visualize_3d(self):
         fig = plt.figure()
@@ -501,7 +489,6 @@ class SphereObstacle(Obstacle):
         ax.plot_wireframe(x, y, z, color='r', alpha=0.3)
 
 def main():
-    # Function to get a configuration option with a default value and prompt
     def get_config_option(option_name, prompt, valid_options=None, default=None):
         if option_name in config:
             value = config[option_name]
@@ -525,9 +512,7 @@ def main():
     # Path to the configuration file
     config_file = '/home/admin/StanfordMSL/gemsplat/gemsplat/scripts/rrt3config.yml'
 
-    # Initialize an empty dictionary for config
     config = {}
-
     # Check if the configuration file exists
     if os.path.exists(config_file):
         with open(config_file, 'r') as file:
@@ -535,6 +520,16 @@ def main():
         print("Configuration loaded from config.yml")
     else:
         print("Configuration file not found. Proceeding with interactive inputs.")
+
+    #NOTE: This next section only makes sense for running the example provided in main loop, otherwise provide programmatically
+    # Load environment
+    env_bounds = get_config_option(
+        'env_bounds',
+        "Enter the environment bounds (minbound, maxbound): ",
+        default='-5 -2.5 5 2.5'
+    )
+    env_bounds = list(map(float, env_bounds.split()))
+    ebounds = [(env_bounds[0], env_bounds[2]), (env_bounds[1], env_bounds[3])]
 
     # Ask the user to select the algorithm
     algorithm_input = get_config_option(
@@ -544,7 +539,7 @@ def main():
         default='RRT'
     ).upper()
 
-    # Select dimension: 1, 2, or 3
+    # Select dimension: 2 or 3
     dimension = get_config_option(
         'dimension',
         "Enter the dimension (2 or 3): ",
@@ -583,58 +578,53 @@ def main():
         )
         bounded_step = bounded_step_input.lower() == 'y'
 
-    # Define environment bounds based on dimension
-    if dimension == 2:
-        # bounds = 
-        bounds = [(-6, 6), (-2.5, 2.5)]
-        final_location = [4.5, 1.5]
-        obstacles = [
-            # CircleObstacle(center=[0, 1.5], radius=1.0),
-            CircleObstacle(center=[1.0, -0.5], radius=0.75),
-            CircleObstacle(center=[-2.0, -1.5], radius=0.75),
-            CircleObstacle(center=[2.0, 1.5], radius=1.0)
-        ]
-    elif dimension == 3:
-        bounds = [(0, 100), (0, 100), (0, 100)]
-        final_location = [50, 50, 50]
-        obstacles = [
-            SphereObstacle(center=[30, 30, 30], radius=10),
-            SphereObstacle(center=[70, 70, 70], radius=15),
-        ]
-    else:
-        print(f"Dimension {dimension} is not supported.")
-        return
-
     # Initialize RRT
+    #NOTE Currently only does 2D, have hardcoded the envbounds
+    #NOTE Lines commented out suggest how to obtain bounds from a pointcloud programmatically
+    # ebounds = (env_bounds["minbound"][:2], env_bounds["maxbound"][:2])
+    # ebounds = [tuple(env_bounds["minbound"][:2]), tuple(env_bounds["maxbound"][:2])]
+    # ebounds = [(env_bounds["minbound"][0], env_bounds["maxbound"][0]), (env_bounds["minbound"][1], env_bounds["maxbound"][1])]
+    print(f"env_bounds: {ebounds}")
+
+    trajset = {}
+
+    pose = np.array([
+        random.uniform(ebounds[0][0], ebounds[0][1]),
+        random.uniform(ebounds[1][0], ebounds[1][1]),
+        random.uniform(0, 2)  # Example altitude range is between 0 and 2
+    ])
+
+    print(f"Current Pose: {pose}")
     rrt = RRT(
-        start=final_location[:2],
-        bounds=bounds[:2],
-        altitude=final_location[3],
+        env_arr=np.empty((3, 1)),
+        start=pose[:2],
+        bounds=ebounds,
+        altitude=pose[2],
         dimension=dimension,
         step_size=1.0,
         collision_check_resolution=0.1,
-        max_iter=2500,
+        max_iter=1000,
         exact_step=exact_step,
         bounded_step=bounded_step,
-        algorithm=algorithm_input,  # Pass the selected algorithm
+        algorithm=algorithm_input,
         prevent_edge_overlap=prevent_edge_overlap
     )
 
     # Build RRT
     rrt.build_rrt()
+
     rrt.visualize(show_sampled_points=True)
+    
+    # Get all leaf nodes in the tree
+    leaf_nodes = [node for node in rrt.nodes if not node.children]
 
-    # Prune redundant leaf nodes
-    # exclusion_radius = 1.5  # Define your exclusion radius
-    # rrt.prune_redundant_leaves(exclusion_radius)
-
-    # Prune the tree
-    # rrt.post_process_tree(min_edge_separation=1.0, min_leaf_separation=1.0)
-
-    # Visualize the RRT
-    # rrt.visualize(show_sampled_points=True)
-    print(f"Algorithm Choice: {algorithm_input}, Dimension Choice: {dimension}, Exact Step: {exact_step}, Bounded Step: {bounded_step}")
-
+    # Extract paths from each leaf node
+    paths = []
+    for leaf_node in leaf_nodes:
+        path = rrt.get_path_from_leaf_to_root(leaf_node)
+        paths.append(path)
+    
+    trajset['example'] = paths
 #%%
 if __name__ == "__main__":
     #%%
