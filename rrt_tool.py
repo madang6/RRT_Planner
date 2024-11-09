@@ -23,6 +23,10 @@ class RRT:
     def __init__(self, env_arr, start, bounds, altitude, algorithm='RRT', dimension=2, step_size=1.0, max_iter=10000,
                   collision_check_resolution=0.1, exact_step=False, bounded_step = False, prevent_edge_overlap=False):
         self.env_arr = env_arr
+        if self.env_pts is not None:
+            self.obstacle_kdtree = cKDTree(self.env_arr.T)
+        else:
+            self.obstacle_kdtree = None
         self.algorithm = algorithm
         self.dimension = dimension
         self.exact_step = exact_step
@@ -45,14 +49,18 @@ class RRT:
 
     def is_collision(self, point):
         # Collision checking against pointcloud
-        pose_xyz = np.hstack((point, self.altitude))
-
+        pose_xyz = np.hstack((point, self.altitude))  # Shape: (3,)
+    
         if self.exclusion_radius is not None:
-            distances = np.linalg.norm(self.env_arr - pose_xyz[:,np.newaxis], axis=0)
-            if not np.any(distances <= self.exclusion_radius):
-                return False
+            # Use KD-tree to find indices of obstacle points within exclusion_radius of pose_xyz
+            #NOTE: beware! workers=-1 uses all available cores - this might be greedy
+            idx = self.obstacle_kdtree.query_ball_point(pose_xyz, r=self.exclusion_radius, eps=0.05, workers=-1)
+            
+            # Check if any obstacle points are within the exclusion radius
+            if len(idx) == 0:
+                return False  # No collision
             else:
-                return True
+                return True   # Collision detected
         else:
             return False
     
